@@ -547,7 +547,45 @@ int raise_window_by_id(pid_t pid, CGWindowID target_wid) {
     return found ? 0 : -1;
 }
 
+/* Map ASCII character to macOS virtual keycode (US keyboard layout). */
+CGKeyCode keycode_for_char(char c) {
+    /* Letters a-z (same codes for upper/lowercase). */
+    static const CGKeyCode letter_map[26] = {
+        0x00,0x0B,0x08,0x02,0x0E,0x03,0x05,0x04,0x22,0x26, /* a-j */
+        0x28,0x25,0x2E,0x2D,0x1F,0x23,0x0C,0x0F,0x01,0x11, /* k-t */
+        0x20,0x09,0x0D,0x07,0x10,0x06                       /* u-z */
+    };
+    /* Digits 0-9. */
+    static const CGKeyCode digit_map[10] = {
+        0x1D,0x12,0x13,0x14,0x15,0x17,0x16,0x1A,0x1C,0x19  /* 0-9 */
+    };
+    /* Punctuation / symbols. */
+    if (c >= 'a' && c <= 'z') return letter_map[c - 'a'];
+    if (c >= 'A' && c <= 'Z') return letter_map[c - 'A'];
+    if (c >= '0' && c <= '9') return digit_map[c - '0'];
+    switch (c) {
+        case '-':  return 0x1B;  case '=':  return 0x18;
+        case '[':  return 0x21;  case ']':  return 0x1E;
+        case '\\': return 0x2A;  case ';':  return 0x29;
+        case '\'': return 0x27;  case ',':  return 0x2B;
+        case '.':  return 0x2F;  case '/':  return 0x2C;
+        case '`':  return 0x32;  case ' ':  return 0x31;
+    }
+    return 0xFFFF; /* Unknown. */
+}
+
 void send_key(pid_t pid, CGKeyCode keycode, UniChar ch, int mods) {
+    /* When modifiers are active and we have a character, use the
+     * correct virtual keycode so the system sends the right combo. */
+    int mapped_keycode = 0;
+    if (ch && mods) {
+        CGKeyCode mapped = keycode_for_char((char)ch);
+        if (mapped != 0xFFFF) {
+            keycode = mapped;
+            mapped_keycode = 1;
+        }
+    }
+
     CGEventRef down = CGEventCreateKeyboardEvent(NULL, keycode, true);
     CGEventRef up = CGEventCreateKeyboardEvent(NULL, keycode, false);
     if (!down || !up) {
@@ -566,7 +604,9 @@ void send_key(pid_t pid, CGKeyCode keycode, UniChar ch, int mods) {
         CGEventSetFlags(up, flags);
     }
 
-    if (ch) {
+    /* When we have a mapped keycode with modifiers, let the system
+     * derive the character from keycode + flags. Otherwise set it. */
+    if (ch && !mapped_keycode) {
         CGEventKeyboardSetUnicodeString(down, 1, &ch);
         CGEventKeyboardSetUnicodeString(up, 1, &ch);
     }
