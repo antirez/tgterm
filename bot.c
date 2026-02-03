@@ -210,10 +210,9 @@ static int totp_setup(const char *db_path) {
     unsigned char secret[20];
     FILE *f = fopen("/dev/urandom", "r");
     if (!f || fread(secret, 1, 20, f) != 20) {
-        fprintf(stderr, "Failed to read /dev/urandom.\n");
-        if (f) fclose(f);
-        sqlite3_close(db);
-        return 0;
+        fprintf(stderr, "Failed to read /dev/urandom, aborting: "
+                        "can't proceed without TOTP secret generation.\n");
+        exit(1);
     }
     fclose(f);
 
