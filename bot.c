@@ -11,7 +11,7 @@
  *
  * Once connected, any text is sent as keystrokes (newline auto-added).
  * End with 💜 to suppress the automatic newline.
- * Emoji modifiers: ❤️ (Ctrl), 💙 (Alt), 💚 (Cmd), 💛 (ESC)
+ * Emoji modifiers: ❤️ (Ctrl), 💙 (Alt), 💚 (Cmd), 🖤 (Shift), 💛 (ESC)
  */
 
 #include <stdio.h>
@@ -42,6 +42,7 @@
 #define MOD_CTRL    (1<<0)
 #define MOD_ALT     (1<<1)
 #define MOD_CMD     (1<<2)
+#define MOD_SHIFT   (1<<3)
 
 /* Known terminal application names. */
 static const char *TerminalApps[] = {
@@ -290,6 +291,13 @@ int match_orange_heart(const unsigned char *p, size_t remaining) {
 /* Match purple heart 💜 (F0 9F 92 9C) - used to suppress newline. */
 int match_purple_heart(const unsigned char *p, size_t remaining) {
     if (remaining >= 4 && p[0] == 0xF0 && p[1] == 0x9F && p[2] == 0x92 && p[3] == 0x9C)
+        return 4;
+    return 0;
+}
+
+/* Match black heart 🖤 (F0 9F 96 A4) - Shift modifier. */
+int match_black_heart(const unsigned char *p, size_t remaining) {
+    if (remaining >= 4 && p[0] == 0xF0 && p[1] == 0x9F && p[2] == 0x96 && p[3] == 0xA4)
         return 4;
     return 0;
 }
@@ -595,9 +603,10 @@ void send_key(pid_t pid, CGKeyCode keycode, UniChar ch, int mods) {
     }
 
     CGEventFlags flags = 0;
-    if (mods & MOD_CTRL) flags |= kCGEventFlagMaskControl;
-    if (mods & MOD_ALT)  flags |= kCGEventFlagMaskAlternate;
-    if (mods & MOD_CMD)  flags |= kCGEventFlagMaskCommand;
+    if (mods & MOD_CTRL)  flags |= kCGEventFlagMaskControl;
+    if (mods & MOD_ALT)   flags |= kCGEventFlagMaskAlternate;
+    if (mods & MOD_CMD)   flags |= kCGEventFlagMaskCommand;
+    if (mods & MOD_SHIFT) flags |= kCGEventFlagMaskShift;
 
     if (flags) {
         CGEventSetFlags(down, flags);
@@ -655,6 +664,12 @@ int send_keys(const char *text) {
             send_key(ConnectedPid, kVK_Return, 0, mods);
             if (mods) had_mods = 1;
             keycount++; last_was_nl = 1; mods = 0;
+            p += consumed; len -= consumed;
+            continue;
+        }
+
+        if ((consumed = match_black_heart(p, len)) > 0) {
+            mods |= MOD_SHIFT;
             p += consumed; len -= consumed;
             continue;
         }
@@ -749,7 +764,7 @@ sds build_help_message(void) {
         "Once connected, text is sent as keystrokes.\n"
         "Newline is auto-added; end with `💜` to suppress it.\n\n"
         "Modifiers (tap to copy, then paste + key):\n"
-        "`❤️` Ctrl  `💙` Alt  `💚` Cmd  `💛` ESC  `🧡` Enter\n\n"
+        "`❤️` Ctrl  `💙` Alt  `💚` Cmd  `🖤` Shift  `💛` ESC  `🧡` Enter\n\n"
         "Escape sequences: \\n=Enter \\t=Tab\n\n"
         "`.otptimeout <seconds>` - Set OTP timeout (30-28800)"
     );
