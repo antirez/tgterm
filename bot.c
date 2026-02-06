@@ -41,12 +41,12 @@ static int Authenticated = 0;        /* Whether OTP has been verified. */
 static time_t LastActivity = 0;      /* Last time owner sent a valid command. */
 static int OtpTimeout = 300;         /* Timeout in seconds (default 5 min). */
 
-/* Connected window. */
-static int Connected = 0;
-static PlatWinID ConnectedWid = 0;
-static pid_t ConnectedPid = 0;
-static char ConnectedOwner[128];
-static char ConnectedTitle[256];
+/* Connected window - stored directly, not as index. */
+static int Connected = 0;             /* 1 if connected, 0 otherwise. */
+static PlatWinID ConnectedWid = 0;    /* Window ID of connected window. */
+static pid_t ConnectedPid = 0;        /* PID of connected window. */
+static char ConnectedOwner[128];      /* Owner name for display. */
+static char ConnectedTitle[256];      /* Title for display. */
 
 /* ============================================================================
  * TOTP Authentication
@@ -96,7 +96,8 @@ static uint32_t totp_code(const unsigned char *secret, size_t secret_len,
     return code % 1000000;
 }
 
-/* Print QR code as compact ASCII art using half-block characters. */
+/* Print QR code as compact ASCII art using half-block characters.
+ * Each output line encodes two QR rows using ▀ ▄ █ and space. */
 static void print_qr_ascii(const char *text) {
     uint8_t qrcode[qrcodegen_BUFFER_LEN_MAX];
     uint8_t tempbuf[qrcodegen_BUFFER_LEN_MAX];
@@ -109,7 +110,7 @@ static void print_qr_ascii(const char *text) {
     }
 
     int size = qrcodegen_getSize(qrcode);
-    int lo = -1, hi = size + 1;
+    int lo = -1, hi = size + 1; /* 1-module quiet zone. */
 
     for (int y = lo; y < hi; y += 2) {
         for (int x = lo; x < hi; x++) {
@@ -117,9 +118,9 @@ static void print_qr_ascii(const char *text) {
                        qrcodegen_getModule(qrcode, x, y));
             int bot = (x >= 0 && x < size && y+1 >= 0 && y+1 < size &&
                        qrcodegen_getModule(qrcode, x, y+1));
-            if (top && bot)       printf("\xe2\x96\x88");
-            else if (top && !bot) printf("\xe2\x96\x80");
-            else if (!top && bot) printf("\xe2\x96\x84");
+            if (top && bot)       printf("\xe2\x96\x88"); /* █ */
+            else if (top && !bot) printf("\xe2\x96\x80"); /* ▀ */
+            else if (!top && bot) printf("\xe2\x96\x84"); /* ▄ */
             else                  printf(" ");
         }
         printf("\n");
@@ -148,7 +149,8 @@ static const char *bytes_to_hex(const unsigned char *data, int len) {
     return hex;
 }
 
-/* Setup TOTP: check for existing secret, generate if needed, display QR. */
+/* Setup TOTP: check for existing secret, generate if needed, display QR.
+ * Returns 1 on success, 0 on error/weak-security. */
 static int totp_setup(const char *db_path) {
     if (WeakSecurity) return 0;
 
@@ -157,11 +159,14 @@ static int totp_setup(const char *db_path) {
         fprintf(stderr, "Cannot open database for TOTP setup.\n");
         return 0;
     }
+    /* Ensure KV table exists. */
     sqlite3_exec(db, TB_CREATE_KV_STORE, 0, 0, NULL);
 
+    /* Check for existing secret. */
     sds existing = kvGet(db, "totp_secret");
     if (existing) {
         sdsfree(existing);
+        /* Load stored timeout if present. */
         sds timeout_str = kvGet(db, "otp_timeout");
         if (timeout_str) {
             int t = atoi(timeout_str);
@@ -169,9 +174,10 @@ static int totp_setup(const char *db_path) {
             sdsfree(timeout_str);
         }
         sqlite3_close(db);
-        return 1;
+        return 1; /* Secret already exists. */
     }
 
+    /* Generate 20 random bytes. */
     unsigned char secret[20];
     FILE *f = fopen("/dev/urandom", "r");
     if (!f || fread(secret, 1, 20, f) != 20) {
@@ -181,9 +187,11 @@ static int totp_setup(const char *db_path) {
     }
     fclose(f);
 
+    /* Store as hex in KV. */
     kvSet(db, "totp_secret", bytes_to_hex(secret, 20), 0);
     sqlite3_close(db);
 
+    /* Build otpauth URI and display QR code. */
     const char *b32 = base32_encode(secret, 20);
     char uri[256];
     snprintf(uri, sizeof(uri),
@@ -236,9 +244,9 @@ int match_red_heart(const unsigned char *p, size_t remaining) {
 /* Match colored hearts 💙💚💛 (F0 9F 92 99/9A/9B). */
 int match_colored_heart(const unsigned char *p, size_t remaining, char *heart) {
     if (remaining >= 4 && p[0] == 0xF0 && p[1] == 0x9F && p[2] == 0x92) {
-        if (p[3] == 0x99) { *heart = 'B'; return 4; }
-        if (p[3] == 0x9A) { *heart = 'G'; return 4; }
-        if (p[3] == 0x9B) { *heart = 'Y'; return 4; }
+        if (p[3] == 0x99) { *heart = 'B'; return 4; }  /* 💙 Blue = Alt */
+        if (p[3] == 0x9A) { *heart = 'G'; return 4; }  /* 💚 Green = Cmd */
+        if (p[3] == 0x9B) { *heart = 'Y'; return 4; }  /* 💛 Yellow = ESC */
     }
     return 0;
 }
@@ -319,6 +327,9 @@ int refresh_window_list(void) {
     return WindowCount;
 }
 
+/* Check if connected window still exists on screen. If the exact window ID
+ * is gone but the same PID still has an on-screen window (tab switch),
+ * the platform layer updates ConnectedWid to the new window. */
 int connected_window_exists(void) {
     if (!Connected) return 0;
     return plat_window_exists(&ConnectedWid, ConnectedPid);
@@ -347,20 +358,22 @@ int send_keys(const char *text) {
 
     plat_raise_window(ConnectedPid, ConnectedWid);
 
+    /* Check if we should suppress trailing newline. */
     int add_newline = !ends_with_purple_heart(text);
 
     const unsigned char *p = (const unsigned char *)text;
     size_t len = strlen(text);
 
+    /* If ends with purple heart, reduce length to skip it. */
     if (!add_newline && len >= 4)
         len -= 4;
 
     int mods = 0;
     int consumed;
     char heart;
-    int keycount = 0;
-    int had_mods = 0;
-    int last_was_nl = 0;
+    int keycount = 0;       /* Number of actual keystrokes sent. */
+    int had_mods = 0;       /* True if any keystroke used modifiers/nav. */
+    int last_was_nl = 0;    /* True if last keystroke was Enter. */
 
     while (len > 0) {
         if ((consumed = match_red_heart(p, len)) > 0) {
@@ -380,7 +393,7 @@ int send_keys(const char *text) {
         int navkey;
         if ((consumed = match_arrow(p, len, &navkey)) > 0) {
             plat_send_key(ConnectedPid, navkey, 0, mods);
-            if (mods) had_mods = 1;
+            had_mods = 1;
             keycount++; last_was_nl = 0; mods = 0;
             p += consumed; len -= consumed;
             continue;
@@ -388,7 +401,7 @@ int send_keys(const char *text) {
 
         if ((consumed = match_page_updown(p, len, &navkey)) > 0) {
             plat_send_key(ConnectedPid, navkey, 0, mods);
-            if (mods) had_mods = 1;
+            had_mods = 1;
             keycount++; last_was_nl = 0; mods = 0;
             p += consumed; len -= consumed;
             continue;
@@ -435,6 +448,10 @@ int send_keys(const char *text) {
         p++; len--;
     }
 
+    /* Add newline unless:
+     * - Suppressed by purple heart
+     * - Single modified keystroke (like Ctrl+C) or bare ESC/nav key
+     * - Last explicit keystroke was already a newline */
     if (add_newline && !(keycount == 1 && had_mods) && !last_was_nl) {
         usleep(50000);
         plat_send_key(ConnectedPid, PLAT_KEY_RETURN, 0, 0);
@@ -520,6 +537,7 @@ void refresh_screenshot(int64_t chat_id, int64_t msg_id) {
 void handle_request(sqlite3 *db, BotRequest *br) {
     pthread_mutex_lock(&RequestLock);
 
+    /* Check owner. First user to message becomes owner. */
     sds owner_str = kvGet(db, OWNER_KEY);
     int64_t owner_id = 0;
 
@@ -529,6 +547,7 @@ void handle_request(sqlite3 *db, BotRequest *br) {
     }
 
     if (owner_id == 0) {
+        /* Register first user as owner. */
         char buf[32];
         snprintf(buf, sizeof(buf), "%lld", (long long)br->from);
         kvSet(db, OWNER_KEY, buf, 0);
@@ -541,6 +560,7 @@ void handle_request(sqlite3 *db, BotRequest *br) {
         goto done;
     }
 
+    /* TOTP authentication check. */
     if (!WeakSecurity) {
         if (!Authenticated || time(NULL) - LastActivity > OtpTimeout) {
             Authenticated = 0;
@@ -549,6 +569,7 @@ void handle_request(sqlite3 *db, BotRequest *br) {
                 goto done;
             }
             char *req = br->request;
+            /* Check if message is a 6-digit OTP code. */
             int is_otp = (strlen(req) == 6);
             for (int i = 0; is_otp && i < 6; i++) {
                 if (!isdigit((unsigned char)req[i])) is_otp = 0;
@@ -565,6 +586,7 @@ void handle_request(sqlite3 *db, BotRequest *br) {
         LastActivity = time(NULL);
     }
 
+    /* Handle callback query (button press). */
     if (br->is_callback) {
         botAnswerCallbackQuery(br->callback_id);
         if (strcmp(br->callback_data, REFRESH_DATA) == 0 && Connected) {
@@ -606,6 +628,7 @@ void handle_request(sqlite3 *db, BotRequest *br) {
         goto done;
     }
 
+    /* Handle .N to connect to window N. */
     if (req[0] == '.' && isdigit(req[1])) {
         int n = atoi(req + 1);
         refresh_window_list();
@@ -638,6 +661,7 @@ void handle_request(sqlite3 *db, BotRequest *br) {
         goto done;
     }
 
+    /* Not a command - send as keystrokes if connected. */
     if (!Connected) {
         sds msg = build_list_message();
         botSendMessage(br->target, msg, 0);
@@ -645,6 +669,7 @@ void handle_request(sqlite3 *db, BotRequest *br) {
         goto done;
     }
 
+    /* Check window still exists. */
     if (!connected_window_exists()) {
         disconnect();
         sds msg = sdsnew("Window closed.\n\n");
@@ -656,6 +681,8 @@ void handle_request(sqlite3 *db, BotRequest *br) {
         goto done;
     }
 
+    /* Send keystrokes, then wait a bit for the terminal to react.
+     * Re-check the window (keystrokes like ESC+N may switch tabs). */
     send_keys(req);
 
     sleep(2);
@@ -689,6 +716,8 @@ int main(int argc, char **argv) {
     }
 
     plat_init();
+
+    /* TOTP setup: check/generate secret before starting the bot. */
     totp_setup(dbfile);
 
     static char *triggers[] = { "*", NULL };
