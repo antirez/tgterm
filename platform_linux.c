@@ -344,6 +344,18 @@ void plat_send_key(pid_t pid, int special, int ch, int mods) {
         keycode = XKeysymToKeycode(dpy, XK_Tab);
     } else if (special == PLAT_KEY_ESCAPE) {
         keycode = XKeysymToKeycode(dpy, XK_Escape);
+    } else if (special == PLAT_KEY_UP) {
+        keycode = XKeysymToKeycode(dpy, XK_Up);
+    } else if (special == PLAT_KEY_DOWN) {
+        keycode = XKeysymToKeycode(dpy, XK_Down);
+    } else if (special == PLAT_KEY_LEFT) {
+        keycode = XKeysymToKeycode(dpy, XK_Left);
+    } else if (special == PLAT_KEY_RIGHT) {
+        keycode = XKeysymToKeycode(dpy, XK_Right);
+    } else if (special == PLAT_KEY_PAGEUP) {
+        keycode = XKeysymToKeycode(dpy, XK_Page_Up);
+    } else if (special == PLAT_KEY_PAGEDN) {
+        keycode = XKeysymToKeycode(dpy, XK_Page_Down);
     } else {
         /* Map ASCII character to keysym. X11 Latin-1 keysyms match ASCII. */
         KeySym sym = (KeySym)ch;

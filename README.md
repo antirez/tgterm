@@ -93,6 +93,13 @@ Once connected to a window, any text you send is typed into it as keystrokes. A 
 
 Modifiers can be combined: `❤️💙x` sends Ctrl+Alt+X. A single modified keystroke (like `❤️c`) will not have an automatic newline appended.
 
+**Navigation keys:**
+
+- ⬆️ ⬇️ ⬅️ ➡️ — Arrow keys (command history, cursor movement)
+- 🔼 🔽 — Page Up / Page Down (scrolling in vim, less, etc.)
+
+Modifiers work with navigation too: `❤️⬆️` sends Ctrl+Up.
+
 **Escape sequences:** `\n` sends Enter, `\t` sends Tab, `\\` sends a literal backslash.
 
 ### Screenshots

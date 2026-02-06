@@ -24,6 +24,12 @@ typedef unsigned long PlatWinID;
 #define PLAT_KEY_RETURN  1
 #define PLAT_KEY_TAB     2
 #define PLAT_KEY_ESCAPE  3
+#define PLAT_KEY_UP      4
+#define PLAT_KEY_DOWN    5
+#define PLAT_KEY_LEFT    6
+#define PLAT_KEY_RIGHT   7
+#define PLAT_KEY_PAGEUP  8
+#define PLAT_KEY_PAGEDN  9
 
 /* Window information. */
 typedef struct {

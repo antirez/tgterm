@@ -257,6 +257,40 @@ int match_purple_heart(const unsigned char *p, size_t remaining) {
     return 0;
 }
 
+/* Match arrow emoji ⬆️⬇️⬅️➡️ (3-byte base + optional 3-byte VS16).
+ * Returns consumed bytes and sets *key to the PLAT_KEY_* constant. */
+int match_arrow(const unsigned char *p, size_t remaining, int *key) {
+    if (remaining >= 3 && p[0] == 0xE2 && p[1] == 0xAC) {
+        int k = 0;
+        if (p[2] == 0x86) k = PLAT_KEY_UP;     /* ⬆ U+2B06 */
+        else if (p[2] == 0x87) k = PLAT_KEY_DOWN;  /* ⬇ U+2B07 */
+        else if (p[2] == 0x85) k = PLAT_KEY_LEFT;  /* ⬅ U+2B05 */
+        if (k) {
+            *key = k;
+            if (remaining >= 6 && p[3] == 0xEF && p[4] == 0xB8 && p[5] == 0x8F)
+                return 6;
+            return 3;
+        }
+    }
+    /* ➡ U+27A1 = E2 9E A1 (+ optional VS16) */
+    if (remaining >= 3 && p[0] == 0xE2 && p[1] == 0x9E && p[2] == 0xA1) {
+        *key = PLAT_KEY_RIGHT;
+        if (remaining >= 6 && p[3] == 0xEF && p[4] == 0xB8 && p[5] == 0x8F)
+            return 6;
+        return 3;
+    }
+    return 0;
+}
+
+/* Match page up/down emoji 🔼🔽 (F0 9F 94 BC/BD). */
+int match_page_updown(const unsigned char *p, size_t remaining, int *key) {
+    if (remaining >= 4 && p[0] == 0xF0 && p[1] == 0x9F && p[2] == 0x94) {
+        if (p[3] == 0xBC) { *key = PLAT_KEY_PAGEUP; return 4; }  /* 🔼 */
+        if (p[3] == 0xBD) { *key = PLAT_KEY_PAGEDN; return 4; }  /* 🔽 */
+    }
+    return 0;
+}
+
 /* Check if string ends with purple heart. */
 int ends_with_purple_heart(const char *text) {
     size_t len = strlen(text);
@@ -339,6 +373,23 @@ int send_keys(const char *text) {
             plat_send_key(ConnectedPid, PLAT_KEY_RETURN, 0, mods);
             if (mods) had_mods = 1;
             keycount++; last_was_nl = 1; mods = 0;
+            p += consumed; len -= consumed;
+            continue;
+        }
+
+        int navkey;
+        if ((consumed = match_arrow(p, len, &navkey)) > 0) {
+            plat_send_key(ConnectedPid, navkey, 0, mods);
+            if (mods) had_mods = 1;
+            keycount++; last_was_nl = 0; mods = 0;
+            p += consumed; len -= consumed;
+            continue;
+        }
+
+        if ((consumed = match_page_updown(p, len, &navkey)) > 0) {
+            plat_send_key(ConnectedPid, navkey, 0, mods);
+            if (mods) had_mods = 1;
+            keycount++; last_was_nl = 0; mods = 0;
             p += consumed; len -= consumed;
             continue;
         }
@@ -435,6 +486,13 @@ sds build_help_message(void) {
         "`\xf0\x9f\x92\x9a` Cmd/Super  "
         "`\xf0\x9f\x92\x9b` ESC  "
         "`\xf0\x9f\xa7\xa1` Enter\n\n"
+        "Navigation:\n"
+        "`\xe2\xac\x86\xef\xb8\x8f` Up  "
+        "`\xe2\xac\x87\xef\xb8\x8f` Down  "
+        "`\xe2\xac\x85\xef\xb8\x8f` Left  "
+        "`\xe2\x9e\xa1\xef\xb8\x8f` Right  "
+        "`\xf0\x9f\x94\xbc` PgUp  "
+        "`\xf0\x9f\x94\xbd` PgDn\n\n"
         "Escape sequences: \\n=Enter \\t=Tab\n\n"
         "`.otptimeout <seconds>` - Set OTP timeout (30-28800)"
     );

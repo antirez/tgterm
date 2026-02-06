@@ -249,6 +249,12 @@ void plat_send_key(pid_t pid, int special, int ch, int mods) {
     case PLAT_KEY_RETURN:  keycode = 0x24; break;
     case PLAT_KEY_TAB:     keycode = 0x30; break;
     case PLAT_KEY_ESCAPE:  keycode = 0x35; break;
+    case PLAT_KEY_UP:      keycode = 0x7E; break;
+    case PLAT_KEY_DOWN:    keycode = 0x7D; break;
+    case PLAT_KEY_LEFT:    keycode = 0x7B; break;
+    case PLAT_KEY_RIGHT:   keycode = 0x7C; break;
+    case PLAT_KEY_PAGEUP:  keycode = 0x74; break;
+    case PLAT_KEY_PAGEDN:  keycode = 0x79; break;
     default:
         uc = (UniChar)ch;
         if (mods) {
