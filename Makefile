@@ -1,18 +1,37 @@
-CC = clang
-CFLAGS = -Wall -O2 -mmacosx-version-min=14.0
-FRAMEWORKS = -framework CoreGraphics -framework CoreFoundation -framework ImageIO \
-             -framework CoreServices -framework ApplicationServices
-LIBS = -lcurl -lsqlite3
+UNAME_S := $(shell uname -s)
 
-OBJS = bot.o botlib.o sds.o cJSON.o sqlite_wrap.o json_wrap.o qrcodegen.o sha1.o
+ifeq ($(UNAME_S),Darwin)
+  CC = clang
+  CFLAGS = -Wall -O2 -mmacosx-version-min=14.0
+  PLATFORM_LIBS = -framework CoreGraphics -framework CoreFoundation \
+                  -framework ImageIO -framework CoreServices \
+                  -framework ApplicationServices
+  PLATFORM_OBJ = platform_macos.o
+else ifeq ($(UNAME_S),Linux)
+  CC ?= gcc
+  CFLAGS = -Wall -O2
+  PLATFORM_LIBS = -lX11 -lXtst -lpng
+  PLATFORM_OBJ = platform_linux.o
+endif
+
+LIBS = -lcurl -lsqlite3 $(PLATFORM_LIBS)
+
+OBJS = bot.o $(PLATFORM_OBJ) botlib.o sds.o cJSON.o sqlite_wrap.o \
+       json_wrap.o qrcodegen.o sha1.o
 
 all: tgterm
 
 tgterm: $(OBJS)
-	$(CC) $(CFLAGS) -o $@ $(OBJS) $(FRAMEWORKS) $(LIBS)
+	$(CC) $(CFLAGS) -o $@ $(OBJS) $(LIBS)
 
-bot.o: bot.c botlib.h sds.h
+bot.o: bot.c botlib.h sds.h platform.h
 	$(CC) $(CFLAGS) -c bot.c
+
+platform_macos.o: platform_macos.c platform.h
+	$(CC) $(CFLAGS) -c platform_macos.c
+
+platform_linux.o: platform_linux.c platform.h
+	$(CC) $(CFLAGS) -c platform_linux.c
 
 botlib.o: botlib.c botlib.h sds.h cJSON.h sqlite_wrap.h
 	$(CC) $(CFLAGS) -c botlib.c

@@ -21,21 +21,25 @@ This is how it works:
 2. After you setup your TOTP, you send the bot the first message, and you become its owner. It will only accept queries from you (your Telegram ID) and will require you to authenticat with an OTP for the first time, and again after a timeout.
 3. At this point, you can ask for the list of terminal windows in your system with `.list`, connect to one of them with (for instance) `.2`, then you can send any text that will be "typed" in the window, like if you are still at your computer. You have modifiers, ways to send `ESC`, and so forth, so you can do many things, like changing the visible tab.
 
-Important: **this program only works on macOS for now.**
+**Supported platforms:** macOS and Linux (X11).
 
 ## First run
 
-Please note in advance that the **program requires two system permissions** to function:
+### macOS permissions
+
+The program requires two system permissions on macOS:
 
 - **Screen Recording** — needed to capture terminal window screenshots.
 - **Accessibility** — needed to inject keystrokes and raise windows.
 
-MacOS will prompt you to grant these on first use. If screenshots or keystrokes silently fail, check System Settings → Privacy & Security.
+macOS will prompt you to grant these on first use. If screenshots or keystrokes silently fail, check System Settings → Privacy & Security.
 
-To setup the project:
+### Setup
 
 1. Create a Telegram bot via [@BotFather](https://t.me/botfather) and get the API key.
-2. Install `libcurl` and `libsqlite3`. The project also uses my own `botlib` but it is included directly into the project, so no need to install anything.
+2. Install dependencies:
+   - **macOS:** `libcurl` and `libsqlite3` (usually pre-installed).
+   - **Linux:** `sudo apt install libx11-dev libxtst-dev libpng-dev libcurl4-openssl-dev libsqlite3-dev`
 3. Build with `make` and run:
 
 ```
@@ -89,6 +93,13 @@ Once connected to a window, any text you send is typed into it as keystrokes. A 
 
 Modifiers can be combined: `❤️💙x` sends Ctrl+Alt+X. A single modified keystroke (like `❤️c`) will not have an automatic newline appended.
 
+**Navigation keys:**
+
+- ⬆️ ⬇️ ⬅️ ➡️ — Arrow keys (command history, cursor movement)
+- 🔼 🔽 — Page Up / Page Down (scrolling in vim, less, etc.)
+
+Modifiers work with navigation too: `❤️⬆️` sends Ctrl+Up.
+
 **Escape sequences:** `\n` sends Enter, `\t` sends Tab, `\\` sends a literal backslash.
 
 ### Screenshots
@@ -109,9 +120,57 @@ This tool allows remote control of terminal windows via Telegram. Given the sens
 
 **Disabling TOTP.** If you don't want OTP authentication (not recommended), run with `--use-weak-security`. The bot will still enforce ownership but will not require OTP codes.
 
+## Headless / VM usage
+
+tgterm can run on headless servers and VMs (no physical monitor) using Xvfb, a virtual X framebuffer. This is useful for controlling coding agents remotely from your phone.
+
+### Quick setup
+
+Install the required packages:
+
+```
+sudo apt install xvfb openbox xterm
+```
+
+Start the virtual display, a window manager, and a terminal:
+
+```
+Xvfb :99 -screen 0 1920x1080x24 &
+DISPLAY=:99 openbox &
+DISPLAY=:99 xterm -fa Monospace -fs 14 -geometry 120x40 &
+```
+
+Then run tgterm pointed at the virtual display:
+
+```
+DISPLAY=:99 ./tgterm --apikey <your-api-key>
+```
+
+You can launch as many xterm sessions as you need and switch between them with `.list` and `.1`, `.2`, etc. from Telegram.
+
+### Resolution
+
+Change the Xvfb screen size for higher resolution screenshots. For example, 2560x1440:
+
+```
+Xvfb :99 -screen 0 2560x1440x24 &
+```
+
+### Terminal theme and colors
+
+xterm reads `~/.Xresources` for appearance settings (font, colors, geometry). Load them with `xrdb -merge ~/.Xresources` before starting xterm. You can also pass settings directly via `-xrm` flags on the xterm command line.
+
+### What you need
+
+- **Xvfb** — virtual X server (renders to memory, no GPU needed).
+- **A window manager** — openbox is lightweight and sufficient. Required so that tgterm can enumerate windows via `_NET_CLIENT_LIST`.
+- **A terminal emulator** — xterm works everywhere. Any X11 terminal will do.
+
 ## Limitations
 
 - **Deprecated macOS APIs.** The project uses older Core Graphics and Process Manager APIs for screenshot capture and window management. These produce compiler warnings on macOS 14+ but still work correctly, and provide good compatibility with older macOS versions. They will be replaced if and when Apple removes them.
+- **Linux: X11 only.** The Linux backend requires an X11 display server. Wayland is not supported (XWayland may work).
+- **Linux: screenshots require visible windows.** On Linux, the screenshot is captured from the root window at the window's position, so the window must be visible (not occluded). The bot raises the window before capturing, which handles this in most cases.
 - **UTF-8 keystrokes.** Non-ASCII text (beyond the special emoji modifiers) is not handled correctly when sending keystrokes. Only ASCII characters are reliably injected.
 
 ## Credits
