@@ -141,6 +141,62 @@ DISPLAY=:99 ./tgterm --apikey <your-api-key>
 
 You can launch as many xterm sessions as you need and switch between them with `.list` and `.1`, `.2`, etc. from Telegram.
 
+### Resolution
+
+Change the Xvfb screen size for higher resolution screenshots. For example, 2560x1440:
+
+```
+Xvfb :99 -screen 0 2560x1440x24 &
+```
+
+### Terminal theme and colors
+
+xterm reads `~/.Xresources` for appearance settings. Load them with `xrdb` **before** starting xterm:
+
+```
+DISPLAY=:99 xrdb -merge ~/.Xresources
+DISPLAY=:99 xterm -title "Session 1" &
+```
+
+Example `~/.Xresources` with a dark theme (Catppuccin Mocha):
+
+```
+xterm*faceName: DejaVu Sans Mono
+xterm*faceSize: 13
+xterm*renderFont: true
+xterm*termName: xterm-256color
+xterm*scrollBar: false
+xterm*saveLines: 4096
+xterm*geometry: 140x45
+
+xterm*background: #1e1e2e
+xterm*foreground: #cdd6f4
+xterm*cursorColor: #f5e0dc
+
+xterm*color0: #45475a
+xterm*color1: #f38ba8
+xterm*color2: #a6e3a1
+xterm*color3: #f9e2af
+xterm*color4: #89b4fa
+xterm*color5: #f5c2e7
+xterm*color6: #94e2d5
+xterm*color7: #bac2de
+xterm*color8: #585b70
+xterm*color9: #f38ba8
+xterm*color10: #a6e3a1
+xterm*color11: #f9e2af
+xterm*color12: #89b4fa
+xterm*color13: #f5c2e7
+xterm*color14: #94e2d5
+xterm*color15: #f5e0dc
+```
+
+You'll also need `x11-xserver-utils` installed for `xrdb`:
+
+```
+sudo apt install x11-xserver-utils
+```
+
 ### What you need
 
 - **Xvfb** — virtual X server (renders to memory, no GPU needed).
